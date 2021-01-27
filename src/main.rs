@@ -26,7 +26,6 @@ const TWILIO_BASE_URL: &str = "https://api.twilio.com/2010-04-01";
 async fn main() -> SureResult<()> {
 	init_logging()?;
 
-	info!("begin log");
 	let client = request::Client::new();
 	let sess_id = get_session_id(&client).await?;
 	let mut listings = get_listings(&client, &sess_id, 0).await?;
