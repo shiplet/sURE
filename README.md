@@ -24,6 +24,9 @@ servers.
 Configuration files will live in `~/.sure`. You'll need to create this
 directory before running the script for the first time.
 
+`~/.sure` will also house the `sure.log` and `listings.txt` files,
+generated automatically.
+
 It'll need two files: `twilio.env` and `queries.env`. In the following
 formats:
 
