@@ -26,6 +26,7 @@ const TWILIO_BASE_URL: &str = "https://api.twilio.com/2010-04-01";
 async fn main() -> SureResult<()> {
 	init_logging()?;
 
+	info!("begin log");
 	let client = request::Client::new();
 	let sess_id = get_session_id(&client).await?;
 	let mut listings = get_listings(&client, &sess_id, 0).await?;
@@ -45,7 +46,10 @@ fn init_logging() -> SureResult<()> {
 		.append(true)
 		.create(true)
 		.open(&get_sure_filepath("sure.log"))?;
-	let config = ConfigBuilder::new().set_time_format_str("%c").build();
+	let config = ConfigBuilder::new()
+		.set_time_format_str("%c")
+		.set_time_to_local(true)
+		.build();
 
 	CombinedLogger::init(vec![WriteLogger::new(LevelFilter::Info, config, log_file)]).unwrap();
 
