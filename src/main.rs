@@ -19,7 +19,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, LineWriter, Seek, Write};
 use std::str;
 
-const SURE_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; ARM MacOS 11_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.2 Safari/605.1.15";
+const SURE_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.2 Safari/605.1.15";
 const TWILIO_BASE_URL: &str = "https://api.twilio.com/2010-04-01";
 
 #[tokio::main]
@@ -45,12 +45,9 @@ fn init_logging() -> SureResult<()> {
 		.append(true)
 		.create(true)
 		.open(&get_sure_filepath("sure.log"))?;
-	CombinedLogger::init(vec![WriteLogger::new(
-		LevelFilter::Info,
-		Config::default(),
-		log_file,
-	)])
-	.unwrap();
+	let config = ConfigBuilder::new().set_time_format_str("%c").build();
+
+	CombinedLogger::init(vec![WriteLogger::new(LevelFilter::Info, config, log_file)]).unwrap();
 
 	Ok(())
 }
