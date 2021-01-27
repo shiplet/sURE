@@ -1,3 +1,7 @@
+#[macro_use]
+extern crate log;
+extern crate simplelog;
+
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
 use reqwest as request;
@@ -9,6 +13,7 @@ use regex::Regex;
 use request::header::{HeaderMap, AUTHORIZATION, CONTENT_TYPE, USER_AGENT};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
+use simplelog::*;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, LineWriter, Seek, Write};
@@ -19,16 +24,33 @@ const TWILIO_BASE_URL: &str = "https://api.twilio.com/2010-04-01";
 
 #[tokio::main]
 async fn main() -> SureResult<()> {
+	init_logging()?;
+
 	let client = request::Client::new();
 	let sess_id = get_session_id(&client).await?;
-	let listings = get_listings(&client, &sess_id).await?;
-	let listings_map = scrape_listings(&client, &listings).await?;
-	let mut desired_listings = parse_listings(&listings_map);
-	remove_duplicates(desired_listings.as_mut());
-	if desired_listings.len() > 0 {
+	let mut listings = get_listings(&client, &sess_id, 0).await?;
+	remove_duplicates(&mut listings);
+	if listings.markers.len() > 0 {
+		let listings_map = scrape_listings(&client, &listings).await?;
+		let desired_listings = parse_listings(&listings_map);
 		let listing_message = build_listing_message(&desired_listings);
 		send_messages(&client, &listing_message).await?;
 	}
+
+	Ok(())
+}
+
+fn init_logging() -> SureResult<()> {
+	let log_file = OpenOptions::new()
+		.append(true)
+		.create(true)
+		.open(&get_sure_filepath("sure.log"))?;
+	CombinedLogger::init(vec![WriteLogger::new(
+		LevelFilter::Info,
+		Config::default(),
+		log_file,
+	)])
+	.unwrap();
 
 	Ok(())
 }
@@ -58,7 +80,12 @@ async fn get_session_id(client: &request::Client) -> SureResult<String> {
 fn get_listings<'a>(
 	client: &'a request::Client,
 	session_id: &'a str,
+	retry_count: usize,
 ) -> BoxFuture<'a, SureResult<UreData>> {
+	if retry_count > 3 {
+		error!("exceeded retry count - URE must be down");
+		std::process::exit(0);
+	}
 	async move {
 		let params = get_ure_search_params();
 		let mut headers = HeaderMap::new();
@@ -79,8 +106,8 @@ fn get_listings<'a>(
 		match serde_json::from_str(&res_text) {
 			Ok(v) => Ok(v),
 			Err(_) => {
-				println!("failed to parse text, retrying");
-				Ok(get_listings(client, session_id).await?)
+				error!("failed to parse text, retrying");
+				Ok(get_listings(client, session_id, retry_count + 1).await?)
 			}
 		}
 	}.boxed()
@@ -126,14 +153,14 @@ async fn scrape_listings(
 				mut_futures = remaining;
 			}
 			(Err(_e), _index, remaining) => {
-				println!("document failed");
+				error!("document failed");
 				mut_futures = remaining;
 			}
 		}
 	}
 
-	println!(
-		"\rdownloaded {:.2?}MB from {} listings{}",
+	info!(
+		"downloaded {:.2?}MB from {} listings{}",
 		size as f32 / 1000000.0,
 		total,
 		" ".repeat(50)
@@ -173,26 +200,28 @@ fn parse_listings(listing_map: &HashMap<String, Html>) -> Vec<DesiredListing> {
 	desired_listings
 }
 
-fn remove_duplicates(listings: &mut Vec<DesiredListing>) {
+fn remove_duplicates(listings: &mut UreData) {
 	let mut dup_idx: Vec<usize> = vec![];
 	let mut existing = get_checked_listings();
-	for (idx, listing) in listings.iter().enumerate() {
-		if existing.contains(&listing.mls) {
+	for (idx, listing) in listings.markers.iter().enumerate() {
+		if existing.contains(&listing.id) {
 			dup_idx.push(idx);
 		}
 	}
 
-	for i in dup_idx.into_iter().rev() {
-		listings.remove(i);
+	if dup_idx.len() > 0 {
+		for i in dup_idx.into_iter().rev() {
+			listings.markers.remove(i);
+		}
 	}
 
-	if listings.len() > 0 {
-		for listing in listings {
-			existing.push(listing.mls.clone());
+	if listings.markers.len() > 0 {
+		for listing in listings.markers.iter() {
+			existing.push(listing.id.clone());
 		}
 		write_checked_listings(&existing).unwrap();
 	} else {
-		println!("no new listings");
+		info!("no new listings");
 	}
 }
 
@@ -274,9 +303,9 @@ async fn send_message(client: &request::Client, message: &str, to: &str) -> Sure
 		.await?;
 
 	if res.status() == 201 {
-		println!("message sent");
+		info!("message sent");
 	} else {
-		println!(
+		error!(
 			"error sending message: {:?}\n{}",
 			res.status(),
 			res.text().await?
@@ -292,7 +321,7 @@ async fn send_message(client: &request::Client, message: &str, to: &str) -> Sure
 
 fn get_checked_listings() -> Vec<String> {
 	let mut checked_mls: Vec<String> = vec![];
-	if let Ok(lines) = read_lines(&get_sure_config_file("listings.txt")) {
+	if let Ok(lines) = read_lines(&get_sure_filepath("listings.txt")) {
 		for line in lines {
 			if let Ok(l) = line {
 				checked_mls.push(String::from(l.trim()))
@@ -308,7 +337,7 @@ fn write_checked_listings(checked: &Vec<String>) -> SureResult<()> {
 	let mut file = OpenOptions::new()
 		.write(true)
 		.create(true)
-		.open(&get_sure_config_file("listings.txt"))?;
+		.open(&get_sure_filepath("listings.txt"))?;
 
 	file.set_len(0)?;
 	file.seek(SeekFrom::Start(0))?;
@@ -326,7 +355,7 @@ fn write_checked_listings(checked: &Vec<String>) -> SureResult<()> {
 
 fn get_ure_search_params() -> String {
 	let mut param_encoded = String::from("");
-	if let Ok(lines) = read_lines(&get_sure_config_file("queries.env")) {
+	if let Ok(lines) = read_lines(&get_sure_filepath("queries.env")) {
 		for line in lines {
 			if let Ok(l) = line {
 				param_encoded.push_str(&format!("{}&", l));
@@ -338,7 +367,7 @@ fn get_ure_search_params() -> String {
 
 fn get_twilio_credentials() -> TwilioAuth {
 	let mut auth = TwilioAuth::new();
-	if let Ok(lines) = read_lines(&get_sure_config_file("twilio.env")) {
+	if let Ok(lines) = read_lines(&get_sure_filepath("twilio.env")) {
 		for line in lines {
 			if let Ok(i) = line {
 				let config_item: Vec<&str> = i.split('=').collect();
@@ -370,7 +399,7 @@ fn read_lines(filename: &str) -> io::Result<io::Lines<io::BufReader<File>>> {
 	Ok(io::BufReader::new(file).lines())
 }
 
-fn get_sure_config_file(filename: &str) -> String {
+fn get_sure_filepath(filename: &str) -> String {
 	let mut home_path = home_dir().unwrap();
 	home_path.push(".sure");
 	home_path.push(filename);
