@@ -161,6 +161,8 @@ async fn scrape_listings(
 		}
 	}
 
+	println!("\n");
+
 	info!(
 		"downloaded {:.2?}MB from {} listings{}",
 		size as f32 / 1000000.0,
