@@ -306,9 +306,10 @@ async fn send_message(client: &request::Client, message: &str, to: &str) -> Sure
 		info!("message sent");
 	} else {
 		error!(
-			"error sending message: {:?}\n{}",
+			"error sending message: {:?}\n└──{}└──{:?}",
 			res.status(),
-			res.text().await?
+			res.text().await?,
+			params
 		)
 	}
 
