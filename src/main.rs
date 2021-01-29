@@ -33,8 +33,10 @@ async fn main() -> SureResult<()> {
 	if listings.markers.len() > 0 {
 		let listings_map = scrape_listings(&client, &listings).await?;
 		let desired_listings = parse_listings(&listings_map);
-		let listing_message = build_listing_message(&desired_listings);
-		send_messages(&client, &listing_message).await?;
+		if desired_listings.len() > 0 {
+			let listing_message = build_listing_message(&desired_listings);
+			send_messages(&client, &listing_message).await?;
+		}
 	}
 
 	Ok(())
@@ -184,7 +186,12 @@ fn parse_listings(listing_map: &HashMap<String, Html>) -> Vec<DesiredListing> {
 				.collect::<Vec<&str>>();
 			node_vec.remove(0);
 			if node_vec[0] == "Days on URE" && node_vec[1] == "Just Listed" {
-				dl.just_listed = true;
+				dl.interested = true;
+			}
+			if node_vec[0] == "Days on URE"
+				&& node_vec[1].to_string().parse::<usize>().unwrap() >= 20
+			{
+				dl.interested = true;
 			}
 			if node_vec[0] == "Status" && node_vec[1] == "Active" {
 				dl.active = true;
@@ -419,7 +426,7 @@ fn get_sure_filepath(filename: &str) -> String {
 #[derive(Debug)]
 struct DesiredListing {
 	active: bool,
-	just_listed: bool,
+	interested: bool,
 	mls: String,
 }
 
@@ -429,7 +436,7 @@ impl DesiredListing {
 	}
 
 	fn is_desired(&self) -> bool {
-		self.active && self.just_listed
+		self.active && self.interested
 	}
 }
 
@@ -437,7 +444,7 @@ impl Default for DesiredListing {
 	fn default() -> Self {
 		DesiredListing {
 			active: false,
-			just_listed: false,
+			interested: false,
 			mls: String::from(""),
 		}
 	}
