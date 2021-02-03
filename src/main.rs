@@ -32,7 +32,7 @@ async fn main() -> SureResult<()> {
 	remove_duplicates(&mut listings);
 	if listings.markers.len() > 0 {
 		let listings_map = scrape_listings(&client, &listings).await?;
-		let desired_listings = parse_listings(&listings_map);
+		let desired_listings = get_desired_listings(&listings_map);
 		if desired_listings.len() > 0 {
 			let listing_message = build_listing_message(&desired_listings);
 			send_messages(&client, &listing_message).await?;
@@ -164,16 +164,17 @@ async fn scrape_listings(
 	println!("\n");
 
 	info!(
-		"downloaded {:.2?}MB from {} listings{}",
+		"downloaded {:.2?}MB from {} listings\n\t\t\t\t└──{:?}{}",
 		size as f32 / 1000000.0,
 		total,
+		documents.iter().map(|v| v.0).collect::<Vec<&String>>(),
 		" ".repeat(50)
 	);
 
 	Ok(documents)
 }
 
-fn parse_listings(listing_map: &HashMap<String, Html>) -> Vec<DesiredListing> {
+fn get_desired_listings(listing_map: &HashMap<String, Html>) -> Vec<DesiredListing> {
 	let selector = Selector::parse("div.fact-copy-wrap").unwrap();
 	let mut desired_listings: Vec<DesiredListing> = vec![];
 	for (key, value) in listing_map {
@@ -187,14 +188,20 @@ fn parse_listings(listing_map: &HashMap<String, Html>) -> Vec<DesiredListing> {
 				.map(|&v| v.trim())
 				.collect::<Vec<&str>>();
 			node_vec.remove(0);
-			if node_vec[0] == "Days on URE" && node_vec[1] == "Just Listed" {
+
+			if node_vec[0] == "Days on URE"
+				&& (node_vec[1] == "Just Listed"
+					|| node_vec[1].to_string().parse::<usize>().unwrap() == 1)
+			{
 				dl.interested = true;
 			}
+
 			if node_vec[0] == "Days on URE"
 				&& node_vec[1].to_string().parse::<usize>().unwrap() >= 20
 			{
 				dl.interested = true;
 			}
+
 			if node_vec[0] == "Status" && node_vec[1] == "Active" {
 				dl.active = true;
 			}
@@ -315,7 +322,7 @@ async fn send_message(client: &request::Client, message: &str, to: &str) -> Sure
 		info!("message sent");
 	} else {
 		error!(
-			"error sending message: {:?}\n└──{}\n└──{:?}",
+			"error sending message: {:?}\n\t└──{}\n\t└──{:?}",
 			res.status(),
 			res.text().await?,
 			params
