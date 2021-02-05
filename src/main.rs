@@ -191,13 +191,8 @@ fn get_desired_listings(listing_map: &HashMap<String, Html>) -> Vec<DesiredListi
 
 			if node_vec[0] == "Days on URE"
 				&& (node_vec[1] == "Just Listed"
-					|| node_vec[1].to_string().parse::<usize>().unwrap() == 1)
-			{
-				dl.interested = true;
-			}
-
-			if node_vec[0] == "Days on URE"
-				&& node_vec[1].to_string().parse::<usize>().unwrap() >= 20
+					|| node_vec[1].to_string().parse::<usize>().unwrap() == 1
+					|| node_vec[1].to_string().parse::<usize>().unwrap() >= 20)
 			{
 				dl.interested = true;
 			}
@@ -361,7 +356,14 @@ fn write_checked_listings(checked: &Vec<String>) -> SureResult<()> {
 
 	let mut file = LineWriter::new(file);
 
-	for c in checked {
+	let mut sorted = checked
+		.iter()
+		.map(|v| v.parse::<usize>().unwrap())
+		.collect::<Vec<usize>>();
+
+	sorted.sort();
+
+	for c in sorted {
 		contents.push_str(&format!("{}\n", c));
 	}
 
