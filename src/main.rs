@@ -175,7 +175,7 @@ async fn scrape_listings(
 }
 
 fn get_desired_listings(listing_map: &HashMap<String, Html>) -> Vec<DesiredListing> {
-	let selector = Selector::parse("div.fact-copy-wrap").unwrap();
+	let selector = Selector::parse(".facts___list___items .facts___item").unwrap();
 	let mut desired_listings: Vec<DesiredListing> = vec![];
 	for (key, value) in listing_map {
 		let mut dl = DesiredListing::new();
@@ -187,11 +187,10 @@ fn get_desired_listings(listing_map: &HashMap<String, Html>) -> Vec<DesiredListi
 				.iter()
 				.map(|&v| v.trim())
 				.collect::<Vec<&str>>();
-			node_vec.remove(0);
+			node_vec.retain(|&v| v != "");
 
 			if node_vec[0] == "Days on URE"
 				&& (node_vec[1] == "Just Listed"
-					|| node_vec[1].to_string().parse::<usize>().unwrap() == 1
 					|| node_vec[1].to_string().parse::<usize>().unwrap() >= 20)
 			{
 				dl.interested = true;
